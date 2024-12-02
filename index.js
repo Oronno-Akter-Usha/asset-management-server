@@ -48,6 +48,8 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
+    const usersCollection = client.db("assetManagement").collection("users");
+
     // auth related api
     app.post("/jwt", async (req, res) => {
       const user = req.body;
@@ -76,6 +78,18 @@ async function run() {
       } catch (err) {
         res.status(500).send(err);
       }
+    });
+
+    // save a user data in db
+    app.post("/user", async (req, res) => {
+      const user = req.body;
+      const query = { email: user.email };
+      const existingUser = await usersCollection.findOne(query);
+      if (existingUser) {
+        return res.send({ message: "user already exits", insertedId: null });
+      }
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
     });
   } finally {
     // Ensures that the client will close when you finish/error
