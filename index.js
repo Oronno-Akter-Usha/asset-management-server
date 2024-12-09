@@ -150,6 +150,73 @@ async function run() {
         res.status(500).send({ message: "Internal Server Error." });
       }
     });
+
+    // get employee for hrManager
+    app.get("/team", async (req, res) => {
+      const { hrEmail } = req.query;
+      // Fetch the HR manager's details
+      const hr = await usersCollection.findOne(
+        { email: hrEmail, role: "hrManager" },
+        { projection: { team: 1 } }
+      );
+
+      if (!hr) {
+        return res.status(404).send({ message: "HR Manager not found." });
+      }
+
+      // Fetch details of team members using the team array
+      const teamDetails = await usersCollection
+        .find({ _id: { $in: hr.team } })
+        .toArray();
+
+      res.send({ team: teamDetails });
+    });
+
+    // remove any employee from team
+    app.delete("/team/:employeeId", async (req, res) => {
+      const { employeeId } = req.params;
+      const { hrEmail } = req.body; // Extract hrEmail from the request body
+
+      if (!ObjectId.isValid(employeeId)) {
+        return res.send({ message: "Invalid employee ID." });
+      }
+
+      // Find HR Manager by email
+      const hr = await usersCollection.findOne({
+        email: hrEmail,
+        role: "hrManager",
+      });
+
+      if (!hr) {
+        return res.send({ message: "HR Manager not found." });
+      }
+
+      // Remove the employee ID from HR manager's team
+      const updatedTeam = hr.team.filter(
+        (teamMemberId) => teamMemberId.toString() !== employeeId
+      );
+
+      // Update the HR manager's document to reflect the change
+      await usersCollection.updateOne(
+        { email: hrEmail, role: "hrManager" },
+        { $set: { team: updatedTeam } }
+      );
+
+      // Clear company_name and added_by_hrManager fields from employee document
+      const updateResult = await usersCollection.updateOne(
+        { _id: new ObjectId(employeeId) }, // Correctly instantiate ObjectId using 'new'
+        { $set: { company_name: "", added_by_hrManager: "" } }
+      );
+
+      // Check if the update was successful
+      if (updateResult.modifiedCount === 0) {
+        return res.send({ message: "Employee fields not updated." });
+      }
+
+      res.send({
+        message: "Employee removed from the team and fields cleared.",
+      });
+    });
   } catch (error) {
     console.log(error.name, error.massage);
   } finally {
