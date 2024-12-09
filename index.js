@@ -49,6 +49,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     const usersCollection = client.db("assetManagement").collection("users");
+    const assetsCollection = client.db("assetManagement").collection("assets");
 
     // auth related api
     app.post("/jwt", async (req, res) => {
@@ -216,6 +217,13 @@ async function run() {
       res.send({
         message: "Employee removed from the team and fields cleared.",
       });
+    });
+
+    // Add a new asset to the assets collection.
+    app.post("/asset", async (req, res) => {
+      const asset = req.body;
+      const result = await assetsCollection.insertOne(asset);
+      res.send(result);
     });
   } catch (error) {
     console.log(error.name, error.massage);
