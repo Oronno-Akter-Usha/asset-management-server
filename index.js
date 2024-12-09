@@ -98,6 +98,60 @@ async function run() {
       const result = await usersCollection.findOne({ email });
       res.send(result);
     });
+
+    // get a employee-without-company
+    app.get("/employees-without-company", async (req, res) => {
+      const employees = await usersCollection
+        .find({ role: "employee", company_name: "" })
+        .toArray();
+      res.send(employees);
+    });
+
+    // API to add an employee to an HR Manager's team with validation and updates.
+    app.patch("/add-employee", async (req, res) => {
+      const { hrEmail, employeeId } = req.body;
+      try {
+        // Fetch the HR manager's details using hrEmail
+        const hr = await usersCollection.findOne({
+          email: hrEmail,
+          role: "hrManager",
+        });
+        console.log("HR found:", hr);
+
+        if (!hr) {
+          return res.send({ message: "HR Manager not found." });
+        }
+
+        // Check if the team size exceeds the package limit
+        if (hr.team.length >= hr.package.memberLimit) {
+          return res.send({ message: "Team member limit exceeded." });
+        }
+
+        // Add the employee to the HR's team
+        const result = await usersCollection.updateOne(
+          { email: hrEmail },
+          { $addToSet: { team: new ObjectId(String(employeeId)) } }
+        );
+
+        // Update the employee's `company_name` field
+        const updateEmployee = await usersCollection.updateOne(
+          { _id: new ObjectId(String(employeeId)) },
+          {
+            $set: {
+              company_name: hr.company_name,
+              added_by_hrManager: hrEmail,
+            },
+          }
+        );
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error adding employee to the team:", error);
+        res.status(500).send({ message: "Internal Server Error." });
+      }
+    });
+  } catch (error) {
+    console.log(error.name, error.massage);
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
