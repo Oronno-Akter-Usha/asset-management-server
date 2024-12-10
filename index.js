@@ -148,29 +148,91 @@ async function run() {
         res.send(result);
       } catch (error) {
         console.error("Error adding employee to the team:", error);
-        res.status(500).send({ message: "Internal Server Error." });
+        res.send({ message: "Internal Server Error." });
       }
     });
 
-    // get employee for hrManager
-    app.get("/team", async (req, res) => {
-      const { hrEmail } = req.query;
-      // Fetch the HR manager's details
-      const hr = await usersCollection.findOne(
-        { email: hrEmail, role: "hrManager" },
-        { projection: { team: 1 } }
-      );
+    // GET my employee for hr
+    app.get("/myEmployee", async (req, res) => {
+      const { email } = req.query;
 
-      if (!hr) {
-        return res.status(404).send({ message: "HR Manager not found." });
+      if (!email) {
+        return res.status(400).send({ message: "HR email is required." });
       }
 
-      // Fetch details of team members using the team array
-      const teamDetails = await usersCollection
-        .find({ _id: { $in: hr.team } })
-        .toArray();
+      try {
+        // Fetch HR Manager details
+        const hr = await usersCollection.findOne({ email, role: "hrManager" });
 
-      res.send({ team: teamDetails });
+        if (!hr) {
+          return res.status(404).send({ message: "HR Manager not found." });
+        }
+
+        // Fetch HR Manager's team members
+        const teamDetails = await usersCollection
+          .find({ added_by_hrManager: email })
+          .toArray();
+
+        // Include HR Manager as the first entry
+        const fullTeam = [{ ...hr, isHR: true }, ...teamDetails];
+
+        return res.status(200).send({ team: fullTeam });
+      } catch (error) {
+        console.error("Error fetching HR team data:", error);
+        return res
+          .status(500)
+          .send({ message: "Failed to fetch HR team data." });
+      }
+    });
+
+    // GET my team for employees
+    app.get("/myTeam", async (req, res) => {
+      const { email } = req.query;
+
+      if (!email) {
+        return res.status(400).send({ message: "Employee email is required." });
+      }
+
+      try {
+        // Fetch the employee's HR Manager
+        const employee = await usersCollection.findOne(
+          { email, role: "employee" },
+          { projection: { added_by_hrManager: 1 } }
+        );
+
+        if (!employee || !employee.added_by_hrManager) {
+          return res
+            .status(404)
+            .send({ message: "HR Manager not found for this employee." });
+        }
+
+        const hrEmail = employee.added_by_hrManager;
+        const hr = await usersCollection.findOne({
+          email: hrEmail,
+          role: "hrManager",
+        });
+
+        if (!hr) {
+          return res
+            .status(404)
+            .send({ message: "HR Manager details not found." });
+        }
+
+        // Fetch the HR Manager's team members
+        const teamMembers = await usersCollection
+          .find({ added_by_hrManager: hrEmail })
+          .toArray();
+
+        // Combine HR Manager and team members into a single team array
+        const team = [{ ...hr, isHR: true }, ...teamMembers];
+
+        return res.status(200).send({ team });
+      } catch (error) {
+        console.error("Error fetching employee's HR data:", error);
+        return res
+          .status(500)
+          .send({ message: "Failed to fetch employee's HR data." });
+      }
     });
 
     // remove any employee from team
