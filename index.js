@@ -234,6 +234,14 @@ async function run() {
         .toArray();
       res.send(result);
     });
+
+    // Deletes a specific asset by its ID.
+    app.delete("/asset/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await assetsCollection.deleteOne(query);
+      res.send(result);
+    });
   } catch (error) {
     console.log(error.name, error.massage);
   } finally {
