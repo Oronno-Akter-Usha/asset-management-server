@@ -225,6 +225,15 @@ async function run() {
       const result = await assetsCollection.insertOne(asset);
       res.send(result);
     });
+
+    // Retrieves assets added by a specific HR Manager using their email.
+    app.get("/assets/:email", async (req, res) => {
+      const hrEmail = req.params.email;
+      const result = await assetsCollection
+        .find({ added_by_hrManager: hrEmail })
+        .toArray();
+      res.send(result);
+    });
   } catch (error) {
     console.log(error.name, error.massage);
   } finally {
