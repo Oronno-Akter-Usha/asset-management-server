@@ -111,45 +111,41 @@ async function run() {
     // API to add an employee to an HR Manager's team with validation and updates.
     app.patch("/add-employee", async (req, res) => {
       const { hrEmail, employeeId } = req.body;
-      try {
-        // Fetch the HR manager's details using hrEmail
-        const hr = await usersCollection.findOne({
-          email: hrEmail,
-          role: "hrManager",
-        });
-        console.log("HR found:", hr);
 
-        if (!hr) {
-          return res.send({ message: "HR Manager not found." });
-        }
+      // Fetch the HR manager's details using hrEmail
+      const hr = await usersCollection.findOne({
+        email: hrEmail,
+        role: "hrManager",
+      });
+      console.log("HR found:", hr);
 
-        // Check if the team size exceeds the package limit
-        if (hr.team.length >= hr.package.memberLimit) {
-          return res.send({ message: "Team member limit exceeded." });
-        }
-
-        // Add the employee to the HR's team
-        const result = await usersCollection.updateOne(
-          { email: hrEmail },
-          { $addToSet: { team: new ObjectId(String(employeeId)) } }
-        );
-
-        // Update the employee's `company_name` field
-        const updateEmployee = await usersCollection.updateOne(
-          { _id: new ObjectId(String(employeeId)) },
-          {
-            $set: {
-              company_name: hr.company_name,
-              added_by_hrManager: hrEmail,
-            },
-          }
-        );
-
-        res.send(result);
-      } catch (error) {
-        console.error("Error adding employee to the team:", error);
-        res.send({ message: "Internal Server Error." });
+      if (!hr) {
+        return res.send({ message: "HR Manager not found." });
       }
+
+      // Check if the team size exceeds the package limit
+      if (hr.team.length >= hr.package.memberLimit) {
+        return res.send({ message: "Team member limit exceeded." });
+      }
+
+      // Add the employee to the HR's team
+      const result = await usersCollection.updateOne(
+        { email: hrEmail },
+        { $addToSet: { team: new ObjectId(String(employeeId)) } }
+      );
+
+      // Update the employee's `company_name` field
+      const updateEmployee = await usersCollection.updateOne(
+        { _id: new ObjectId(String(employeeId)) },
+        {
+          $set: {
+            company_name: hr.company_name,
+            added_by_hrManager: hrEmail,
+          },
+        }
+      );
+
+      res.send(result);
     });
 
     // GET my employee for hr
@@ -157,32 +153,24 @@ async function run() {
       const { email } = req.query;
 
       if (!email) {
-        return res.status(400).send({ message: "HR email is required." });
+        return res.send({ message: "HR email is required." });
+      }
+      // Fetch HR Manager details
+      const hr = await usersCollection.findOne({ email, role: "hrManager" });
+
+      if (!hr) {
+        return res.send({ message: "HR Manager not found." });
       }
 
-      try {
-        // Fetch HR Manager details
-        const hr = await usersCollection.findOne({ email, role: "hrManager" });
+      // Fetch HR Manager's team members
+      const teamDetails = await usersCollection
+        .find({ added_by_hrManager: email })
+        .toArray();
 
-        if (!hr) {
-          return res.status(404).send({ message: "HR Manager not found." });
-        }
+      // Include HR Manager as the first entry
+      const fullTeam = [{ ...hr, isHR: true }, ...teamDetails];
 
-        // Fetch HR Manager's team members
-        const teamDetails = await usersCollection
-          .find({ added_by_hrManager: email })
-          .toArray();
-
-        // Include HR Manager as the first entry
-        const fullTeam = [{ ...hr, isHR: true }, ...teamDetails];
-
-        return res.status(200).send({ team: fullTeam });
-      } catch (error) {
-        console.error("Error fetching HR team data:", error);
-        return res
-          .status(500)
-          .send({ message: "Failed to fetch HR team data." });
-      }
+      return res.send({ team: fullTeam });
     });
 
     // GET my team for employees
@@ -190,49 +178,37 @@ async function run() {
       const { email } = req.query;
 
       if (!email) {
-        return res.status(400).send({ message: "Employee email is required." });
+        return res.send({ message: "Employee email is required." });
       }
 
-      try {
-        // Fetch the employee's HR Manager
-        const employee = await usersCollection.findOne(
-          { email, role: "employee" },
-          { projection: { added_by_hrManager: 1 } }
-        );
+      // Fetch the employee's HR Manager
+      const employee = await usersCollection.findOne(
+        { email, role: "employee" },
+        { projection: { added_by_hrManager: 1 } }
+      );
 
-        if (!employee || !employee.added_by_hrManager) {
-          return res
-            .status(404)
-            .send({ message: "HR Manager not found for this employee." });
-        }
-
-        const hrEmail = employee.added_by_hrManager;
-        const hr = await usersCollection.findOne({
-          email: hrEmail,
-          role: "hrManager",
-        });
-
-        if (!hr) {
-          return res
-            .status(404)
-            .send({ message: "HR Manager details not found." });
-        }
-
-        // Fetch the HR Manager's team members
-        const teamMembers = await usersCollection
-          .find({ added_by_hrManager: hrEmail })
-          .toArray();
-
-        // Combine HR Manager and team members into a single team array
-        const team = [{ ...hr, isHR: true }, ...teamMembers];
-
-        return res.status(200).send({ team });
-      } catch (error) {
-        console.error("Error fetching employee's HR data:", error);
-        return res
-          .status(500)
-          .send({ message: "Failed to fetch employee's HR data." });
+      if (!employee || !employee.added_by_hrManager) {
+        return res.send({ message: "HR Manager not found for this employee." });
       }
+
+      const hrEmail = employee.added_by_hrManager;
+      const hr = await usersCollection.findOne({
+        email: hrEmail,
+        role: "hrManager",
+      });
+
+      if (!hr) {
+        return res.send({ message: "HR Manager details not found." });
+      }
+
+      // Fetch the HR Manager's team members
+      const teamMembers = await usersCollection
+        .find({ added_by_hrManager: hrEmail })
+        .toArray();
+
+      // Combine HR Manager and team members into a single team array
+      const team = [{ ...hr, isHR: true }, ...teamMembers];
+      return res.send({ team });
     });
 
     // remove any employee from team
@@ -303,6 +279,42 @@ async function run() {
       const query = { _id: new ObjectId(id) };
       const result = await assetsCollection.deleteOne(query);
       res.send(result);
+    });
+
+    // get assets for empolyee
+    app.get("/assets", async (req, res) => {
+      const { search, availability, type, userEmail } = req.query;
+
+      if (!userEmail) {
+        return res.send({ message: "User email is required" });
+      }
+
+      // Find the employee
+      const employee = await usersCollection.findOne({ email: userEmail });
+      if (!employee || !employee.added_by_hrManager) {
+        return res.send({ message: "No associated HR manager found" });
+      }
+
+      const hrEmail = employee.added_by_hrManager;
+
+      // Query to filter assets
+      const query = { added_by_hrManager: hrEmail };
+
+      if (search) {
+        query.name = { $regex: search, $options: "i" };
+      }
+
+      if (availability) {
+        query.quantity =
+          availability === "available" ? { $gt: 0 } : { $lte: 0 };
+      }
+
+      if (type) {
+        query.product_type = type;
+      }
+
+      const assets = await assetsCollection.find(query).toArray();
+      res.send(assets);
     });
   } catch (error) {
     console.log(error.name, error.massage);
