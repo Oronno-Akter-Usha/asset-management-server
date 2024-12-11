@@ -326,18 +326,112 @@ async function run() {
       const result = await requestsCollection.insertOne(request);
       res.send(result);
     });
-  } catch (error) {
-    console.log(error.name, error.massage);
-  } finally {
-    // Ensures that the client will close when you finish/error
-    // await client.close();
+
+    // Fetch requested assets by the logged-in user with search and filter
+    app.get("/requested-assets/:email", async (req, res) => {
+      const { search, availability, type } = req.query;
+      const userEmail = req.params.email;
+
+      if (!userEmail) {
+        return res.status(400).send({ error: "User email is required" });
+      }
+
+      const query = { requestedBy: userEmail };
+
+      // Apply filters
+      if (search) {
+        if (!query.asset) query.asset = {};
+        query.asset.name = { $regex: search, $options: "i" };
+      }
+      if (availability) {
+        if (!query.asset) query.asset = {};
+        query.asset.quantity =
+          availability === "available" ? { $gt: 0 } : { $lte: 0 };
+      }
+      if (type) {
+        if (!query.asset) query.asset = {};
+        query.asset.product_type = type;
+      }
+
+      console.log("Query:", query);
+
+      const assets = await requestsCollection
+        .find(query)
+        .sort({ requestDate: -1 })
+        .toArray();
+
+      console.log("Assets Found:", assets);
+
+      if (!assets.length) {
+        return res.status(404).send({ message: "No assets found." });
+      }
+
+      res.send(assets);
+    });
+
+    // Cancel a request
+    app.patch("/cancel-request/:id", async (req, res) => {
+      const id = req.params.id;
+      const result = await requestsCollection.updateOne(
+        { _id: new ObjectId(id) }, // Ensure the ID is an ObjectId
+        { $set: { status: "Cancelled" } }
+      );
+      res.send(result);
+    });
+    // Return an asset
+    app.patch("/return-asset/:id", async (req, res) => {
+      const id = req.params.id;
+
+      // Find the asset request by ID
+      const assetRequest = await requestsCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
+      if (
+        assetRequest?.asset?.product_type === "Returnable" &&
+        assetRequest?.status === "Approved"
+      ) {
+        // Update the request status to "Returned"
+        const updateResult = await requestsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status: "Returned" } }
+        );
+
+        // Increment the asset quantity in the assets collection
+        const quantityUpdate = await assetsCollection.updateOne(
+          { _id: new ObjectId(assetRequest.asset._id) },
+          { $inc: { quantity: 1 } }
+        );
+
+        if (
+          updateResult.modifiedCount === 1 &&
+          quantityUpdate.modifiedCount === 1
+        ) {
+          res.send({ success: true, message: "Asset returned successfully." });
+        } else {
+          res
+            .status(500)
+            .send({ success: false, message: "Failed to return asset." });
+        }
+      } else {
+        res.status(400).send({
+          success: false,
+          message: "Invalid request or asset is not returnable.",
+        });
+      }
+    });
+
+    // Ensure proper connection to the database before starting the server
+
+    app.listen(port, () => {
+      console.log(`Server is running on port ${port}`);
+    });
+  } catch (err) {
+    console.error(
+      "Error connecting to the database or starting the server:",
+      err
+    );
   }
 }
-run().catch(console.dir);
-app.get("/", (req, res) => {
-  res.send("Asset Management Server");
-});
 
-app.listen(port, () => {
-  console.log(`server is running on ${port}`);
-});
+run().catch(console.dir);
