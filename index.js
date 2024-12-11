@@ -50,6 +50,9 @@ async function run() {
   try {
     const usersCollection = client.db("assetManagement").collection("users");
     const assetsCollection = client.db("assetManagement").collection("assets");
+    const requestsCollection = client
+      .db("assetManagement")
+      .collection("requests");
 
     // auth related api
     app.post("/jwt", async (req, res) => {
@@ -148,7 +151,7 @@ async function run() {
       res.send(result);
     });
 
-    // GET my employee for hr
+    // get my employee for hr
     app.get("/myEmployee", async (req, res) => {
       const { email } = req.query;
 
@@ -173,7 +176,7 @@ async function run() {
       return res.send({ team: fullTeam });
     });
 
-    // GET my team for employees
+    // get my team for employees
     app.get("/myTeam", async (req, res) => {
       const { email } = req.query;
 
@@ -315,6 +318,13 @@ async function run() {
 
       const assets = await assetsCollection.find(query).toArray();
       res.send(assets);
+    });
+
+    // save the request in the database.
+    app.post("/request", async (req, res) => {
+      const request = req.body;
+      const result = await requestsCollection.insertOne(request);
+      res.send(result);
     });
   } catch (error) {
     console.log(error.name, error.massage);
