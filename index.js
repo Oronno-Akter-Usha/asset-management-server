@@ -9,7 +9,7 @@ const port = process.env.PORT || 5000;
 
 // middleware
 const corsOptions = {
-  origin: ["http://localhost:5173", "http://localhost:5174"],
+  origin: ["https://asset-management-51d40.web.app"],
   credentials: true,
   optionSuccessStatus: 200,
 };
@@ -358,7 +358,7 @@ async function run() {
       res.send(result);
     });
 
-    // get assets for empolyee
+    // get assets for hr
     app.get("/assets", async (req, res) => {
       const { search, availability, type, userEmail } = req.query;
 
@@ -394,6 +394,52 @@ async function run() {
       res.send(assets);
     });
 
+    // Retrieves assets for employees, filtered by their HR Manager's email
+    app.get("/assets/employee", async (req, res) => {
+      const { search, availability, type, userEmail } = req.query;
+
+      if (!userEmail) {
+        return res.send({ message: "User email is required" });
+      }
+
+      // Find the employee
+      const employee = await usersCollection.findOne({ email: userEmail });
+      if (!employee) {
+        return res.send({ message: "Employee not found" });
+      }
+
+      // Check if the employee has an associated HR Manager
+      const hrEmail = employee.added_by_hrManager;
+      if (!hrEmail) {
+        return res.send({ message: "No associated HR Manager found" });
+      }
+
+      // Build the query to filter assets based on HR Manager's email
+      const query = { added_by_hrManager: hrEmail };
+
+      // Apply search filter if provided
+      if (search) {
+        query.name = { $regex: search, $options: "i" }; // Case-insensitive search
+      }
+
+      // Apply availability filter if provided
+      if (availability) {
+        query.quantity =
+          availability === "available" ? { $gt: 0 } : { $lte: 0 };
+      }
+
+      // Apply product type filter if provided
+      if (type) {
+        query.product_type = type;
+      }
+
+      // Retrieve assets based on the built query
+      const assets = await assetsCollection.find(query).toArray();
+
+      // Return the assets
+      res.send(assets);
+    });
+
     // save the request in the database.
     app.post("/request", async (req, res) => {
       const request = req.body;
@@ -419,6 +465,7 @@ async function run() {
       });
 
       if (!userEmail) {
+        console.error("User email is missing");
         return res.status(400).send({ error: "User email is required" });
       }
 
@@ -432,7 +479,6 @@ async function run() {
         query.quantity =
           availability === "available" ? { $gt: 0 } : { $lte: 0 };
       }
-
       if (type) {
         query.product_type = type;
       }
@@ -654,11 +700,6 @@ async function run() {
           .send({ error: "An error occurred while fetching data" });
       }
     });
-
-    // Ensure proper connection to the database before starting the server
-    app.listen(port, () => {
-      console.log(`Server is running on port ${port}`);
-    });
   } catch (err) {
     console.error(
       "Error connecting to the database or starting the server:",
@@ -668,3 +709,11 @@ async function run() {
 }
 
 run().catch(console.dir);
+
+app.get("/", (req, res) => {
+  res.send("Asset Management Server is running..");
+});
+
+app.listen(port, () => {
+  console.log(`Asset Management is running on port ${port}`);
+});
