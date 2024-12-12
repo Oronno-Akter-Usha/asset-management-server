@@ -326,6 +326,12 @@ async function run() {
       const result = await requestsCollection.insertOne(request);
       res.send(result);
     });
+    // get the request in the database.
+    app.get("/request", async (req, res) => {
+      const request = req.body;
+      const result = await requestsCollection.find(request);
+      res.send(result);
+    });
 
     // Fetch requested assets by the logged-in user with search and filter
     app.get("/requested-assets/:email", async (req, res) => {
@@ -419,6 +425,68 @@ async function run() {
       }
     });
 
+    // Get all requests with search functionality
+    app.get("/all-requests/:email", async (req, res) => {
+      const userEmail = req.params.email;
+      const search = req.query.search;
+
+      if (!userEmail) {
+        return res.status(400).send({ error: "User   email is required" });
+      }
+
+      const query = { "asset.added_by_hrManager": userEmail };
+
+      if (search) {
+        query.$or = [
+          { requesterName: { $regex: search, $options: "i" } },
+          { requestedBy: { $regex: search, $options: "i" } },
+        ];
+      }
+
+      const result = await requestsCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    // Approve or reject a request
+    app.patch("/all-requests/:id", async (req, res) => {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (!id || !status) {
+        return res
+          .status(400)
+          .send({ error: "Request ID and status are required." });
+      }
+
+      if (status !== "Approved" && status !== "Rejected") {
+        return res.status(400).send({ error: "Invalid status provided." });
+      }
+
+      try {
+        const ObjectId = require("mongodb").ObjectId;
+        const result = await requestsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              status,
+              approval_date: status === "Approved" ? new Date() : null,
+            },
+          }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ error: "Request not found." });
+        }
+
+        res
+          .status(200)
+          .send({ message: "Request status updated successfully." });
+      } catch (error) {
+        console.error("Server Error:", error);
+        res.status(500).send({ error: "Internal server error." });
+      }
+    });
+
     // get home page data for employees
     app.get("/home-employee/:email", async (req, res) => {
       const email = req.params.email;
@@ -448,6 +516,60 @@ async function run() {
         pendingRequests,
         monthlyRequests,
       });
+    });
+
+    // API endpoint to fetch HR Manager home data
+    app.get("/home-hr-manager/:email", async (req, res) => {
+      const userEmail = req.params.email;
+
+      if (!userEmail) {
+        return res.status(400).send({ error: "User email is required" });
+      }
+
+      const query = { added_by_hrManager: userEmail };
+
+      console.log("User email:", userEmail);
+      console.log("Query for pending requests:", {
+        ...query,
+        status: "Pending",
+      });
+
+      try {
+        const pendingRequests = await requestsCollection
+          .find({ ...query, status: "Pending" })
+          .sort({ request_date: -1 })
+          .limit(5)
+          .toArray();
+
+        console.log("Pending requests count:", pendingRequests.length);
+        console.log(
+          "Pending requests:",
+          JSON.stringify(pendingRequests, null, 2)
+        );
+
+        const limitedStockItems = await assetsCollection
+          .find({ quantity: { $lt: 10 } })
+          .toArray();
+
+        console.log("Limited stock items count:", limitedStockItems.length);
+        console.log("Limited stock items:", limitedStockItems);
+
+        if (pendingRequests.length === 0 && limitedStockItems.length === 0) {
+          return res.status(200).send({
+            message: "No pending requests or limited stock items found.",
+          });
+        }
+
+        res.status(200).send({
+          pendingRequests,
+          limitedStockItems,
+        });
+      } catch (error) {
+        console.error("Error fetching HR manager data:", error);
+        res
+          .status(500)
+          .send({ error: "An error occurred while fetching data" });
+      }
     });
 
     // Ensure proper connection to the database before starting the server
