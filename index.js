@@ -267,13 +267,87 @@ async function run() {
       res.send(result);
     });
 
-    // Retrieves assets added by a specific HR Manager using their email.
-    app.get("/assets/:email", async (req, res) => {
-      const hrEmail = req.params.email;
-      const result = await assetsCollection
-        .find({ added_by_hrManager: hrEmail })
-        .toArray();
-      res.send(result);
+    // Retrieves assets added by a specific HR Manager using filters
+    app.get("/assets", async (req, res) => {
+      const { search, availability, type, userEmail } = req.query;
+
+      // Log the query parameters for debugging
+      console.log("Received Query Parameters:", {
+        search,
+        availability,
+        type,
+        userEmail,
+      });
+
+      if (!userEmail) {
+        return res.status(400).send({ error: "User email is required" });
+      }
+
+      // Validate if the user is an HR Manager
+      const hrManager = await usersCollection.findOne({
+        email: userEmail,
+        role: "hrManager",
+      });
+      if (!hrManager) {
+        return res.status(403).send({
+          error: "Access denied. Only HR Managers can access this data.",
+        });
+      }
+
+      // Build the query object for filtering assets
+      const query = { added_by_hrManager: userEmail }; // Ensure assets are linked to the HR Manager's email
+
+      // Search filter
+      if (search) {
+        query.name = { $regex: search, $options: "i" }; // Case-insensitive search
+      }
+
+      // Availability filter
+      if (availability) {
+        query.quantity =
+          availability === "available" ? { $gt: 0 } : { $lte: 0 };
+      }
+
+      // Type filter
+      if (type) {
+        query.product_type = type;
+      }
+
+      console.log("Final Query:", query);
+
+      try {
+        const result = await assetsCollection.find(query).toArray();
+        console.log("Assets Found:", result);
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching assets:", error);
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    // Update asset data based on asset ID
+    app.put("/assets/:id", async (req, res) => {
+      const { id } = req.params;
+      const { name, quantity, product_type, date } = req.body; // Get data from the request body
+
+      // Validate required fields
+      if (!name || !quantity || !product_type) {
+        return res.send({ error: "All fields are required" });
+      }
+
+      // Find the asset by ID and update it
+      const updatedAsset = await assetsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            name,
+            quantity,
+            product_type,
+          },
+        }
+      );
+
+      res.send(updatedAsset);
     });
 
     // Deletes a specific asset by its ID.
@@ -334,9 +408,15 @@ async function run() {
     });
 
     // Fetch requested assets by the logged-in user with search and filter
-    app.get("/requested-assets/:email", async (req, res) => {
-      const { search, availability, type } = req.query;
-      const userEmail = req.params.email;
+    app.get("/requested-assets", async (req, res) => {
+      const { search, availability, type, userEmail } = req.query;
+
+      console.log("Received Query Parameters:", {
+        search,
+        availability,
+        type,
+        userEmail,
+      });
 
       if (!userEmail) {
         return res.status(400).send({ error: "User email is required" });
@@ -346,33 +426,36 @@ async function run() {
 
       // Apply filters
       if (search) {
-        if (!query.asset) query.asset = {};
-        query.asset.name = { $regex: search, $options: "i" };
+        query.name = { $regex: search, $options: "i" };
       }
       if (availability) {
-        if (!query.asset) query.asset = {};
-        query.asset.quantity =
+        query.quantity =
           availability === "available" ? { $gt: 0 } : { $lte: 0 };
       }
+
       if (type) {
-        if (!query.asset) query.asset = {};
-        query.asset.product_type = type;
+        query.product_type = type;
       }
 
-      console.log("Query:", query);
+      console.log("Final Query to Database:", query);
 
-      const assets = await requestsCollection
-        .find(query)
-        .sort({ requestDate: -1 })
-        .toArray();
+      try {
+        const assets = await requestsCollection
+          .find(query)
+          .sort({ requestDate: -1 })
+          .toArray();
 
-      console.log("Assets Found:", assets);
+        console.log("Assets Found:", assets);
 
-      if (!assets.length) {
-        return res.status(404).send({ message: "No assets found." });
+        if (!assets.length) {
+          return res.send([]);
+        }
+
+        res.send(assets);
+      } catch (error) {
+        console.error("Error fetching requested assets:", error);
+        res.status(500).send({ error: "Internal server error" });
       }
-
-      res.send(assets);
     });
 
     // Cancel a request
