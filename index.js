@@ -656,7 +656,6 @@ async function run() {
     });
 
     // Ensure proper connection to the database before starting the server
-    await client.connect();
     app.listen(port, () => {
       console.log(`Server is running on port ${port}`);
     });
