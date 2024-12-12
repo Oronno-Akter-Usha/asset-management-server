@@ -399,7 +399,7 @@ async function run() {
 
         // Increment the asset quantity in the assets collection
         const quantityUpdate = await assetsCollection.updateOne(
-          { _id: new ObjectId(assetRequest.asset._id) },
+          { _id: new ObjectId(String(assetRequest.asset._id)) },
           { $inc: { quantity: 1 } }
         );
 
@@ -409,20 +409,49 @@ async function run() {
         ) {
           res.send({ success: true, message: "Asset returned successfully." });
         } else {
-          res
-            .status(500)
-            .send({ success: false, message: "Failed to return asset." });
+          res.send({ success: false, message: "Failed to return asset." });
         }
       } else {
-        res.status(400).send({
+        res.send({
           success: false,
           message: "Invalid request or asset is not returnable.",
         });
       }
     });
 
-    // Ensure proper connection to the database before starting the server
+    // get home page data for employees
+    app.get("/home-employee/:email", async (req, res) => {
+      const email = req.params.email;
+      if (!email) {
+        return res.send({ message: "User email is required" });
+      }
 
+      const pendingRequests = await requestsCollection
+        .find({ requestedBy: email, status: "Pending" })
+        .sort({ requestDate: -1 })
+        .toArray();
+
+      const monthlyRequests = await requestsCollection
+        .find({
+          requestedBy: email,
+        })
+        .sort({ request_date: -1 })
+        .toArray();
+
+      console.log("Monthly requests:", monthlyRequests);
+
+      if (monthlyRequests.length === 0) {
+        console.log("No monthly requests found");
+      }
+
+      res.send({
+        pendingRequests,
+        monthlyRequests,
+      });
+    });
+
+    // Ensure proper connection to the database before starting the server
+    await client.connect();
     app.listen(port, () => {
       console.log(`Server is running on port ${port}`);
     });
